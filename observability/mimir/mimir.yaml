@@ -1,0 +1,41 @@
+# Basic Mimir configuration for single instance deployment
+target: all
+
+# Disable multi-tenancy for simple setup
+multitenancy_enabled: false
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+
+api:
+  prometheus_http_prefix: /prometheus
+
+blocks_storage:
+  filesystem:
+    dir: /data/blocks
+
+compactor:
+  data_dir: /data/compactor
+
+alertmanager_storage:
+  filesystem:
+    dir: /data/alertmanager
+
+ruler_storage:
+  filesystem:
+    dir: /data/ruler
+
+ingester:
+  ring:
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1

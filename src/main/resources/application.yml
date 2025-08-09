@@ -1,0 +1,112 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: observability-example
+
+# Actuator configuration for metrics and health endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,loggers
+  endpoint:
+    health:
+      show-details: always
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 10s
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        hello_request_duration: true
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+        hello_request_duration: 0.5,0.95,0.99
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+    metrics:
+      endpoint: http://localhost:4318/v1/metrics
+
+# OpenTelemetry configuration
+otel:
+  service:
+    name: ${spring.application.name}
+    version: "1.0.0"
+  resource:
+    attributes:
+      service.name: ${spring.application.name}
+      service.version: "1.0.0"
+      deployment.environment: "development"
+  exporter:
+    otlp:
+      endpoint: http://localhost:4318
+      protocol: http/protobuf
+      headers:
+        authorization: "Bearer your-token-here"
+  traces:
+    exporter: otlp
+  metrics:
+    exporter: otlp,prometheus
+  logs:
+    exporter: otlp
+  otlp:
+    logs:
+      endpoint: http://localhost:4318/v1/logs
+  instrumentation:
+    spring-webmvc:
+      enabled: true
+    spring-web:
+      enabled: true
+    spring-boot:
+      enabled: true
+    jdbc:
+      enabled: true
+    logging:
+      enabled: true
+
+# Logging configuration
+logging:
+  level:
+    me.valizadeh.observability: INFO
+    org.springframework.web: INFO
+    io.micrometer: DEBUG
+  file:
+    name: logs/application.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n"
+
+# Profiling configuration - Pyroscope with async-profiler agent
+# COMMENTED OUT due to Windows compatibility issues
+# pyroscope:
+#   application-name: ${spring.application.name}
+#   server-address: http://localhost:4040
+#   profiling-enabled: true
+#   profiling-interval: 10s
+#   # async-profiler configuration for real continuous profiling
+#   alloc: 2m    # Memory allocation profiling
+#   cpu: true    # CPU profiling with call stacks
+#   wall: true   # Wall clock profiling
+
+# JFR (Java Flight Recorder) profiling - CROSS-PLATFORM ALTERNATIVE
+jfr:
+  profiling-enabled: true
+  application-name: ${spring.application.name}
+  pyroscope-url: http://localhost:4040
+  recording-duration: 30s      # Duration of each JFR recording
+  recording-interval: 60s      # How often to collect and send recordings
+  profile-cpu: true            # Enable CPU profiling
+  profile-allocations: true    # Enable memory allocation tracking
+  profile-locks: true          # Enable lock contention analysis

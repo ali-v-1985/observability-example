@@ -1,0 +1,85 @@
+// Grafana Alloy configuration for Observability Stack
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// Remote write to Mimir for metrics
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:9009/api/v1/push"
+    headers = {
+      "X-Scope-OrgID" = "demo",
+    }
+  }
+}
+
+// Scrape metrics from the application running on host
+prometheus.scrape "host_app_metrics" {
+  targets = [
+    {"__address__" = "host.docker.internal:8080", "__metrics_path__" = "/actuator/prometheus"},
+  ]
+  forward_to = [prometheus.remote_write.mimir.receiver]
+  scrape_interval = "15s"
+  job_name = "observability-app-host"
+}
+
+// Loki write configuration
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// OpenTelemetry logs processing
+otelcol.processor.batch "logs" {
+  output {
+    logs = [otelcol.exporter.loki.default.input]
+  }
+}
+
+// Loki exporter for OpenTelemetry logs
+otelcol.exporter.loki "default" {
+  endpoint = "http://loki:3100/loki/api/v1/push"
+}
+
+// Docker logs collection
+loki.source.docker "docker_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = []
+  forward_to = [loki.write.default.receiver]
+}
+
+// OpenTelemetry receiver for traces
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  
+  output {
+    traces = [otelcol.processor.batch.default.input]
+    logs   = [otelcol.processor.batch.logs.input]
+  }
+}
+
+// Batch processor for better performance
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Tempo exporter for traces
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "http://tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
