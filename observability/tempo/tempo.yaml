@@ -13,7 +13,9 @@ distributor:
     otlp:
       protocols:
         grpc:
+          endpoint: 0.0.0.0:4317
         http:
+          endpoint: 0.0.0.0:4318
     opencensus:
 
 ingester:
@@ -38,9 +40,9 @@ storage:
   trace:
     backend: local
     wal:
-      path: /tmp/tempo/wal
+      path: /var/lib/tempo/wal
     local:
-      path: /tmp/tempo/blocks
+      path: /var/lib/tempo/blocks
 
 query_frontend:
   search:

@@ -76,3 +76,14 @@ spring.log
 
 # Observability data (local development)
 observability-data/
+
+# Docker volumes (if any)
+docker-volumes/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Tempo data directory contents (keep directory structure)
+observability/tempo-data/*
+!observability/tempo-data/.gitkeep

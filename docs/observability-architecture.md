@@ -9,25 +9,34 @@ graph TD
     A["🚀 Spring Boot App<br/>localhost:8080"] --> B["📊 Metrics"]
     A --> C["📝 Logs"] 
     A --> D["🔍 Traces"]
+    A --> P["🔥 Profiling<br/>JFR Agent"]
     
     B --> E["Micrometer<br/>Prometheus Endpoint<br/>/actuator/prometheus"]
-    C --> F["Logback<br/>Loki4j HTTP Appender"]
+    C --> F["Console/File<br/>Docker Container"]
     D --> G["OpenTelemetry<br/>OTLP Exporter"]
+    P --> H["Pyroscope Agent<br/>JFR Profiling"]
     
-    E --> H["🔄 Grafana Alloy<br/>localhost:12345"]
-    F --> I["🏪 Loki<br/>localhost:3100"]
-    G --> H
+    E --> I["🔄 Grafana Alloy<br/>localhost:12345"]
+    F --> I
+    G --> I
+    H --> I
     
-    H --> J["📈 Mimir<br/>localhost:9009"]
-    H --> K["⚡ Tempo<br/>localhost:3200"]
+    I --> J["🏪 Loki<br/>localhost:3100"]
     
-    I --> L["📊 Grafana<br/>localhost:3000"]
-    J --> L
-    K --> L
+    I --> K["📈 Mimir<br/>localhost:9009"]
+    I --> L["⚡ Tempo<br/>localhost:3200"]
+    I --> M["🔥 Pyroscope<br/>localhost:4040"]
+    
+    J --> N["📊 Grafana<br/>localhost:3000"]
+    K --> N
+    L --> N
+    M --> N
     
     style A fill:#e1f5fe
-    style L fill:#f3e5f5
-    style H fill:#fff3e0
+    style N fill:#f3e5f5
+    style I fill:#fff3e0
+    style P fill:#ffebee
+    style M fill:#f3e5f5
 ```
 
 ## Request Flow Sequence
@@ -39,10 +48,12 @@ sequenceDiagram
     participant M as Micrometer
     participant L as Logback
     participant O as OpenTelemetry
+    participant P as Pyroscope Agent
     participant AL as Alloy
     participant MI as Mimir
     participant LO as Loki  
     participant T as Tempo
+    participant PY as Pyroscope
     participant G as Grafana
 
     U->>A: GET /hello?name=John
@@ -54,11 +65,18 @@ sequenceDiagram
     
     Note over A,L: LOG: Structured logging with trace context
     A->>L: Log with traceId/spanId
-    L-->>LO: Direct HTTP push
+    Note over L: Logs go to console/file, then Docker container
+    L-->>AL: Docker container logs
+    AL-->>LO: Forward logs to Loki
     
     Note over A,M: METRIC: Counter incremented
     A->>M: hello_requests_total++
     Note over M: Exposed at /actuator/prometheus
+    
+    Note over A,P: PROFILING: JFR data collection
+    A->>P: JFR profiling data
+    P-->>AL: Send profiling data
+    AL-->>PY: Forward to Pyroscope
     
     AL->>A: Scrape metrics (every 15s)
     A-->>AL: Prometheus format data
@@ -70,9 +88,10 @@ sequenceDiagram
     G->>MI: Query metrics
     G->>LO: Query logs  
     G->>T: Query traces
+    G->>PY: Query profiling data
 ```
 
-## The Three Pillars of Observability
+## The Four Pillars of Observability
 
 ### 📊 **Metrics**
 - **Collection**: Micrometer auto-instruments Spring Boot endpoints, JVM stats
@@ -82,10 +101,10 @@ sequenceDiagram
 - **Examples**: `hello_requests_total`, `http_request_duration_seconds`, JVM metrics
 
 ### 📝 **Logs** 
-- **Collection**: Logback with structured JSON logging
-- **Transport**: Loki4j HTTP Appender sends directly to Loki
+- **Collection**: Logback with structured JSON logging to console/file
+- **Transport**: Alloy collects Docker container logs via Docker socket
 - **Correlation**: Includes traceId/spanId for linking to traces
-- **Storage**: Loki (log aggregation system)
+- **Storage**: Loki (log aggregation system) via Alloy
 - **Format**: Structured JSON with labels and timestamps
 
 ### 🔍 **Traces**
@@ -95,13 +114,21 @@ sequenceDiagram
 - **Storage**: Tempo (distributed tracing backend)
 - **Features**: Span relationships, timing, baggage propagation
 
+### 🔥 **Profiling**
+- **Collection**: Java Flight Recorder (JFR) via Pyroscope Java agent
+- **Transport**: Pyroscope agent sends JFR data to Alloy, then to Pyroscope
+- **Types**: CPU profiling, memory allocation, thread analysis
+- **Storage**: Pyroscope (continuous profiling backend)
+- **Features**: Flame graphs, method-level performance analysis, cross-platform
+
 ## Key Benefits
 
 1. **🔄 Correlation**: Logs include traceId/spanId for easy correlation with traces
-2. **📊 Unified View**: Grafana displays all three pillars in one dashboard
-3. **⚡ Real-time**: Direct log shipping, immediate trace forwarding
+2. **📊 Unified View**: Grafana displays all four pillars in one dashboard
+3. **⚡ Real-time**: Direct log shipping, immediate trace forwarding, continuous profiling
 4. **🏗️ Scalable**: Alloy can handle multiple applications
-5. **🔍 Rich Context**: Complete request journey from metrics to traces to logs
+5. **🔍 Rich Context**: Complete request journey from metrics to traces to logs to profiling
+6. **🔥 Cross-platform Profiling**: JFR works on Windows, Linux, and macOS
 
 ## Access Points
 
@@ -110,57 +137,65 @@ sequenceDiagram
 - **Metrics**: http://localhost:8080/actuator/prometheus
 - **Logs**: http://localhost:3100 (Loki)
 - **Traces**: http://localhost:3200 (Tempo)
+- **Profiling**: http://localhost:4040 (Pyroscope)
 - **Alloy**: http://localhost:12345 (collector)
+- **Mimir**: http://localhost:9009 (metrics storage)
 
 ## Current Status
 
 ✅ **Metrics**: Working perfectly - Alloy scraping from app, forwarding to Mimir  
 ✅ **Logs**: Working perfectly - Direct HTTP appender to Loki with trace correlation  
 ✅ **Traces**: Working perfectly - OpenTelemetry OTLP to Tempo via Alloy  
-❌ **Profiling**: Disabled due to Windows compatibility issues with Pyroscope agent
+✅ **Profiling**: Working perfectly - JFR-based profiling via Pyroscope agent to Alloy to Pyroscope
 
-## Profiling Implementation Notes
+## Profiling Implementation
 
-The project includes the **correct** Pyroscope agent integration approach, but it's commented out due to Windows compatibility issues:
+The project uses **Java Flight Recorder (JFR)** via the Pyroscope Java agent for cross-platform profiling:
 
-### Proper Pyroscope Integration (Currently Commented Out)
+### Current JFR Implementation (Working)
 
-```java
-// Required dependency in pom.xml:
-<dependency>
-    <groupId>io.pyroscope</groupId>
-    <artifactId>agent</artifactId>
-    <version>0.13.0</version>
-</dependency>
-
-// Configuration in PyroscopeConfig:
-Config config = new Config.Builder()
-    .setApplicationName(applicationName)
-    .setServerAddress(serverAddress)
-    .build();
-
-PyroscopeAgent.start(config);
+**Configuration in `observability/pyroscope-agent/pyroscope-agent.properties`:**
+```properties
+pyroscope.application.name=observability-example
+pyroscope.server.address=http://alloy:4041
+pyroscope.profiler.type=JFR
+pyroscope.format=jfr
+pyroscope.profiler.event=cpu
+pyroscope.profiling.interval=30s
+pyroscope.upload.interval=30s
+pyroscope.labels=env=dev,service=observability-example
 ```
 
-### Why This Approach is Correct
+**Docker Compose Integration:**
+```yaml
+app:
+  # ... other configuration
+  command: [
+    "java",
+    "-javaagent:/app/pyroscope-javaagent.jar",
+    "-Dpyroscope.config.file=/app/pyroscope-agent.properties",
+    "-jar", "/app/app.jar"
+  ]
+  volumes:
+    - ./observability/pyroscope-agent/pyroscope-agent.properties:/app/pyroscope-agent.properties
+```
+
+### Why JFR is the Right Choice
 
 This provides **real continuous profiling** with:
-- Statistical sampling at high frequency (100Hz)
-- Call stack sampling during CPU work
-- Flame graph generation showing method timing
-- Memory allocation profiling
-- Wall clock time profiling
-- Integration with async-profiler for maximum accuracy
+- **Cross-platform**: Works on Windows, Linux, and macOS
+- **Low overhead**: Less than 1% performance impact
+- **Built-in**: No external dependencies required
+- **CPU profiling**: Method-level CPU usage and call stacks
+- **Memory profiling**: Allocation tracking and GC analysis
+- **Thread analysis**: Lock contention and thread performance
+- **Integration**: Seamless integration with Pyroscope for visualization
 
-### Windows Compatibility Issue
+### Data Flow
 
-The Pyroscope Java agent uses async-profiler internally, which doesn't support Windows. Error:
-```
-java.lang.RuntimeException: Unsupported OS Windows 10
-```
-
-### Alternative Solutions
-
-1. **Linux/macOS Environment**: Use the proper agent-based approach
-2. **Java Flight Recorder (JFR)**: Enable JFR and manually upload files to Pyroscope
-3. **Development Only**: Keep profiling disabled for Windows development
+1. **JFR Collection**: Pyroscope agent collects JFR data from the JVM
+2. **Data Processing**: Agent processes JFR data into Pyroscope format
+3. **Transport**: Agent sends data to Alloy on port 4041
+4. **Forwarding**: Alloy forwards profiling data to Pyroscope
+5. **Storage**: Pyroscope stores and indexes the profiling data
+6. **Visualization**: Grafana queries Pyroscope for flame graphs and analysis

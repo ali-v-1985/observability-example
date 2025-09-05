@@ -38,15 +38,6 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- OpenTelemetry and Tracing -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-tracing-bridge-otel</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
-        </dependency>
 
         <!-- Logging -->
         <dependency>
@@ -54,26 +45,15 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>7.4</version>
         </dependency>
+
+        <!-- OpenTelemetry Java Agent -->
         <dependency>
-            <groupId>com.github.loki4j</groupId>
-            <artifactId>loki-logback-appender</artifactId>
-            <version>1.4.2</version>
-        </dependency>
-        <!-- OpenTelemetry Logback Appender for OTLP logs -->
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
-            <version>1.32.0-alpha</version>
+            <groupId>io.opentelemetry.javaagent</groupId>
+            <artifactId>opentelemetry-javaagent</artifactId>
+            <version>1.32.0</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Profiling - Pyroscope agent (COMMENTED OUT due to Windows compatibility issues) -->
-        <!-- 
-        <dependency>
-            <groupId>io.pyroscope</groupId>
-            <artifactId>agent</artifactId>
-            <version>0.13.0</version>
-        </dependency>
-        -->
 
         <!-- Testing -->
         <dependency>
@@ -88,6 +68,92 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            
+            <!-- Maven Dependency Plugin to copy OpenTelemetry Java Agent -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-opentelemetry-agent</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>io.opentelemetry.javaagent</groupId>
+                                    <artifactId>opentelemetry-javaagent</artifactId>
+                                    <version>1.32.0</version>
+                                    <outputDirectory>${project.build.directory}</outputDirectory>
+                                    <destFileName>opentelemetry-javaagent.jar</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>io.pyroscope</groupId>
+                                    <artifactId>agent</artifactId>
+                                    <version>2.1.2</version>
+                                    <outputDirectory>${project.build.directory}</outputDirectory>
+                                    <destFileName>pyroscope-javaagent.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <!-- Jib Plugin for Docker image building -->
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>3.4.0</version>
+                <configuration>
+                    <from>
+                        <image>eclipse-temurin:21-jdk-alpine</image>
+                    </from>
+                    <to>
+                        <image>observability-example:latest</image>
+                    </to>
+                    <container>
+                        <jvmFlags>
+                            <jvmFlag>-javaagent:/app/opentelemetry-javaagent.jar</jvmFlag>
+                            <jvmFlag>-javaagent:/app/pyroscope-javaagent.jar</jvmFlag>
+                            <jvmFlag>-Dotel.javaagent.configuration-file=/app/otel-agent.properties</jvmFlag>
+                            <jvmFlag>-Dpyroscope.configuration.file=/app/pyroscope-agent.properties</jvmFlag>
+                        </jvmFlags>
+                        <ports>
+                            <port>8080</port>
+                            <port>9464</port>
+                        </ports>
+                        <volumes>
+                            <volume>/app/logs</volume>
+                        </volumes>
+                    </container>
+                    <extraDirectories>
+                        <paths>
+                            <path>
+                                <from>observability/otel-agent</from>
+                                <into>/app</into>
+                            </path>
+                            <path>
+                                <from>observability/pyroscope-agent</from>
+                                <into>/app</into>
+                            </path>
+                            <path>
+                                <from>target</from>
+                                <into>/app</into>
+                                <includes>opentelemetry-javaagent.jar</includes>
+                            </path>
+                            <path>
+                                <from>target</from>
+                                <into>/app</into>
+                                <includes>pyroscope-javaagent.jar</includes>
+                            </path>
+                        </paths>
+                    </extraDirectories>
+                </configuration>
             </plugin>
         </plugins>
     </build>

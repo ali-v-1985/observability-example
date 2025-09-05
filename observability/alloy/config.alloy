@@ -10,19 +10,20 @@ prometheus.remote_write "mimir" {
   endpoint {
     url = "http://mimir:9009/api/v1/push"
     headers = {
-      "X-Scope-OrgID" = "demo",
+      "X-Scope-OrgID" = "observability-example",
     }
   }
 }
 
-// Scrape metrics from the application running on host
-prometheus.scrape "host_app_metrics" {
+// Scrape metrics from the application running in container (sidecar instrumentation)
+prometheus.scrape "container_app_metrics" {
   targets = [
-    {"__address__" = "host.docker.internal:8080", "__metrics_path__" = "/actuator/prometheus"},
+    {"__address__" = "app:8080", "__metrics_path__" = "/actuator/prometheus"},
+    {"__address__" = "app:9464", "__metrics_path__" = "/metrics"},
   ]
   forward_to = [prometheus.remote_write.mimir.receiver]
   scrape_interval = "15s"
-  job_name = "observability-app-host"
+  job_name = "observability-app-container"
 }
 
 // Loki write configuration
@@ -32,45 +33,79 @@ loki.write "default" {
   }
 }
 
-// OpenTelemetry logs processing
-otelcol.processor.batch "logs" {
-  output {
-    logs = [otelcol.exporter.loki.default.input]
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "only_app" {
+  targets = discovery.docker.local.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex        = "/observability-app"
+    action       = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_id"]
+    target_label  = "container_id"
+  }
+  rule {
+    target_label = "service"
+    replacement  = "observability-example"
+  }
+  rule {
+    target_label = "env"
+    replacement  = "dev"
   }
 }
 
-// Loki exporter for OpenTelemetry logs
-otelcol.exporter.loki "default" {
-  endpoint = "http://loki:3100/loki/api/v1/push"
-}
-
-// Docker logs collection
-loki.source.docker "docker_logs" {
+// Docker logs collection for application container (stdout approach)
+loki.source.docker "app_logs" {
   host       = "unix:///var/run/docker.sock"
-  targets    = []
+  targets    = discovery.relabel.only_app.output
   forward_to = [loki.write.default.receiver]
 }
 
 // OpenTelemetry receiver for traces
 otelcol.receiver.otlp "default" {
   grpc {
-    endpoint = "0.0.0.0:4317"
+    endpoint = "0.0.0.0:14317"
   }
   
   http {
-    endpoint = "0.0.0.0:4318"
+    endpoint = "0.0.0.0:14318"
   }
   
   output {
-    traces = [otelcol.processor.batch.default.input]
-    logs   = [otelcol.processor.batch.logs.input]
+    traces  = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.metrics.input]
   }
 }
 
-// Batch processor for better performance
+// Batch processor for traces
 otelcol.processor.batch "default" {
   output {
     traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Batch processor for metrics - export directly to Tempo
+otelcol.processor.batch "metrics" {
+  output {
+    metrics = [otelcol.exporter.otlp.metrics.input]
+  }
+}
+
+// OTLP exporter for metrics to Mimir
+otelcol.exporter.otlp "metrics" {
+  client {
+    endpoint = "http://mimir:9009"
+    tls {
+      insecure = true
+    }
   }
 }
 
@@ -81,5 +116,23 @@ otelcol.exporter.otlp "tempo" {
     tls {
       insecure = true
     }
+  }
+}
+
+// Receive profiles from Pyroscope Java agent (HTTP)
+pyroscope.receive_http "from_agent" {
+  http {
+    listen_address = "0.0.0.0"
+    listen_port    = 4041
+  }
+  
+  // Forward to Pyroscope server
+  forward_to = [pyroscope.write.to_pyroscope.receiver]
+}
+
+// Write profiles to Pyroscope server
+pyroscope.write "to_pyroscope" {
+  endpoint {
+    url = "http://pyroscope:4040"
   }
 }

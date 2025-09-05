@@ -1,6 +1,6 @@
 # Observability Example
 
-A comprehensive Spring Boot 3 application demonstrating modern observability practices with the complete Grafana Labs stack using OpenTelemetry integration.
+A comprehensive Spring Boot 3 application demonstrating modern observability practices with the complete Grafana Labs stack using OpenTelemetry integration and Java Flight Recorder (JFR) profiling.
 
 ## Features
 
@@ -11,8 +11,9 @@ A comprehensive Spring Boot 3 application demonstrating modern observability pra
   - **Mimir** - Metrics storage (Prometheus-compatible)
   - **Loki** - Log aggregation
   - **Tempo** - Distributed tracing
-  - **Pyroscope** - Continuous profiling
+  - **Pyroscope** - Continuous profiling with JFR
 - **Grafana Alloy** - Unified observability data collection
+- **Java Flight Recorder (JFR)** - Cross-platform profiling
 - **Containerized** with Docker Compose
 
 ## Architecture
@@ -20,19 +21,25 @@ A comprehensive Spring Boot 3 application demonstrating modern observability pra
 ```mermaid
 graph TD
     A["🚀 Spring Boot App<br/>localhost:8080"] --> B["📊 Metrics<br/>Micrometer<br/>/actuator/prometheus"]
-    A --> C["📝 Logs<br/>Logback + Loki4j<br/>HTTP Appender"]
+    A --> C["📝 Logs<br/>Console/File<br/>Docker Container"]
     A --> D["🔍 Traces<br/>OpenTelemetry<br/>OTLP Exporter"]
+    A --> P["🔥 Profiling<br/>JFR Agent<br/>Pyroscope Agent"]
     
     B --> E["🔄 Grafana Alloy<br/>localhost:12345"]
-    C --> F["🏪 Loki<br/>localhost:3100"]
+    C --> E
     D --> E
+    P --> E
+    
+    E --> F["🏪 Loki<br/>localhost:3100"]
     
     E --> G["📈 Mimir<br/>localhost:9009"]
     E --> H["⚡ Tempo<br/>localhost:3200"]
+    E --> Q["🔥 Pyroscope<br/>localhost:4040"]
     
     F --> I["📊 Grafana<br/>localhost:3000"]
     G --> I
     H --> I
+    Q --> I
     
     style A fill:#e1f5fe
     style I fill:#f3e5f5
@@ -40,6 +47,8 @@ graph TD
     style F fill:#e8f5e8
     style G fill:#fff8e1
     style H fill:#fce4ec
+    style P fill:#ffebee
+    style Q fill:#f3e5f5
 ```
 
 ## Quick Start
@@ -72,6 +81,9 @@ graph TD
    - **Grafana**: http://localhost:3000 (admin/admin)
    - **Alloy**: http://localhost:12345
    - **Pyroscope**: http://localhost:4040
+   - **Tempo**: http://localhost:3200
+   - **Loki**: http://localhost:3100
+   - **Mimir**: http://localhost:9009
 
 ### Testing the Application
 
@@ -95,7 +107,8 @@ curl "http://localhost:8080/hello?name=Grafana"
 - **Structured logging**: JSON format with logback
 - **Correlation IDs**: Trace and span IDs in logs
 - **Multiple log levels**: INFO, DEBUG, WARN, ERROR
-- **Log aggregation**: Via Loki
+- **Log collection**: Alloy collects Docker container logs
+- **Log aggregation**: Via Loki through Alloy
 
 ### Traces
 - **Distributed tracing**: OpenTelemetry instrumentation
@@ -104,9 +117,11 @@ curl "http://localhost:8080/hello?name=Grafana"
 - **Service maps**: Automatic topology discovery
 
 ### Profiling
-- **Continuous profiling**: CPU and memory profiling
-- **Integration**: Linked with traces and metrics
-- **Flame graphs**: Performance visualization
+- **Java Flight Recorder (JFR)**: Cross-platform profiling using Pyroscope Java agent
+- **CPU Profiling**: Method-level CPU usage and call stacks
+- **Memory Profiling**: Allocation tracking and GC analysis
+- **Integration**: Linked with traces and metrics via Grafana
+- **Flame graphs**: Performance visualization in Pyroscope
 
 ## Configuration
 
@@ -129,10 +144,16 @@ otel:
 
 ### Alloy Configuration
 Located in `observability/alloy/config.alloy`, handles:
-- OTLP data reception
-- Metrics scraping
-- Log collection
-- Data forwarding to backends
+- OTLP data reception (traces and metrics)
+- Metrics scraping from application
+- Profiling data forwarding to Pyroscope
+- Data forwarding to backends (Mimir, Tempo, Pyroscope)
+
+### Pyroscope Agent Configuration
+Located in `observability/pyroscope-agent/pyroscope-agent.properties`:
+- JFR-based profiling configuration
+- CPU profiling events
+- Data forwarding to Alloy
 
 ## Dashboards
 
@@ -142,6 +163,7 @@ Pre-configured Grafana dashboard includes:
 - **Application Logs**: Searchable log viewer
 - **Trace Search**: Distributed trace explorer
 - **Service Map**: Application topology
+- **Profiling Data**: CPU and memory profiling from Pyroscope
 
 ## Development
 
@@ -213,12 +235,13 @@ docker-compose logs alloy
 - **Java 21**
 - **Spring Boot 3.2.1**
 - **OpenTelemetry 1.32.0**
-- **Grafana 10.2.3**
-- **Mimir 2.11.0**
-- **Loki 2.9.4**
-- **Tempo 2.3.1**
+- **Grafana 12.1.1**
+- **Mimir 2.17.0**
+- **Loki 3.5.4**
+- **Tempo 2.8.2**
 - **Pyroscope 1.4.0**
-- **Alloy 1.0.0**
+- **Alloy 1.10.2**
+- **Java Flight Recorder (JFR)** - Built-in profiling
 
 ## License
 

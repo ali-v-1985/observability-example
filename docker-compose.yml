@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Grafana - Visualization and dashboards
   grafana:
-    image: grafana/grafana:10.2.3
+    image: grafana/grafana:12.1.1
     container_name: grafana
     ports:
       - "3000:3000"
@@ -25,7 +25,7 @@ services:
 
   # Mimir - Metrics storage
   mimir:
-    image: grafana/mimir:2.11.0
+    image: grafana/mimir:2.17.0
     container_name: mimir
     ports:
       - "9009:9009"
@@ -41,7 +41,7 @@ services:
 
   # Loki - Logs storage
   loki:
-    image: grafana/loki:2.9.4
+    image: grafana/loki:3.5.4
     container_name: loki
     ports:
       - "3100:3100"
@@ -54,22 +54,22 @@ services:
 
   # Tempo - Traces storage
   tempo:
-    image: grafana/tempo:2.3.1
+    image: grafana/tempo:2.8.2
     container_name: tempo
     ports:
-      - "3200:3200"   # tempo
+      - "3200:3200"   # tempo web ui
       - "4317:4317"   # otlp grpc
       - "4318:4318"   # otlp http
     command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
       - ./observability/tempo/tempo.yaml:/etc/tempo.yaml
-      - tempo-data:/tmp/tempo
+      - ./observability/tempo-data:/var/lib/tempo
     networks:
       - observability
 
   # Pyroscope - Continuous profiling
   pyroscope:
-    image: grafana/pyroscope:1.4.0
+    image: grafana/pyroscope:1.14.1
     container_name: pyroscope
     ports:
       - "4040:4040"
@@ -84,19 +84,22 @@ services:
 
   # Alloy - Observability data collector
   alloy:
-    image: grafana/alloy:v1.0.0
+    image: grafana/alloy:v1.10.2
     container_name: alloy
     ports:
+      - "4041:4041"
       - "12345:12345"
+      - "14317:14317"
+      - "14318:14318"
     volumes:
-      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     command:
+      - --stability.level=public-preview
       - run
       - /etc/alloy/config.alloy
       - --server.http.listen-addr=0.0.0.0:12345
       - --storage.path=/var/lib/alloy/data
-      - --stability.level=generally-available
     environment:
       - ALLOY_DEPLOY_MODE=docker
     networks:
@@ -107,26 +110,21 @@ services:
       - tempo
       - pyroscope
 
-  # Application (commented out - run locally)
-  # app:
-  #   build: .
-  #   container_name: observability-app
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     - SPRING_PROFILES_ACTIVE=docker
-  #     - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318
-  #     - MANAGEMENT_OTLP_TRACING_ENDPOINT=http://alloy:4318/v1/traces
-  #     - MANAGEMENT_OTLP_METRICS_ENDPOINT=http://alloy:4318/v1/metrics
-  #     - PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040
-  #     - OTEL_SERVICE_NAME=observability-example
-  #     - OTEL_RESOURCE_ATTRIBUTES=service.name=observability-example,service.version=1.0.0
-  #   volumes:
-  #     - app-logs:/app/logs
-  #   networks:
-  #     - observability
-  #   depends_on:
-  #     - alloy
+  # Application with sidecar instrumentation
+  app:
+    image: observability-example:latest
+    container_name: observability-app
+    ports:
+      - "8080:8080"
+      - "9464:9464"  # Prometheus metrics from OpenTelemetry agent
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - app-logs:/app/logs
+    networks:
+      - observability
+    depends_on:
+      - alloy
 
 volumes:
   grafana-storage:
