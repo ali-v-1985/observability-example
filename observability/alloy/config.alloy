@@ -92,21 +92,16 @@ otelcol.processor.batch "default" {
   }
 }
 
-// Batch processor for metrics - export directly to Tempo
+// Batch processor for metrics - convert to Prometheus format
 otelcol.processor.batch "metrics" {
   output {
-    metrics = [otelcol.exporter.otlp.metrics.input]
+    metrics = [otelcol.exporter.prometheus.default.input]
   }
 }
 
-// OTLP exporter for metrics to Mimir
-otelcol.exporter.otlp "metrics" {
-  client {
-    endpoint = "http://mimir:9009"
-    tls {
-      insecure = true
-    }
-  }
+// Convert OTLP metrics to Prometheus format
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
 // Tempo exporter for traces

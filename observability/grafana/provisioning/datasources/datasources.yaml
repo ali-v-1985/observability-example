@@ -1,76 +1,92 @@
 apiVersion: 1
 
 datasources:
-  # Mimir for metrics
   - name: Mimir
     type: prometheus
     access: proxy
-    orgId: 1
     url: http://mimir:9009/prometheus
+    uid: mimir
     isDefault: true
-    version: 1
     editable: false
     jsonData:
       httpMethod: GET
       prometheusType: Mimir
-      prometheusVersion: 2.40.0
-      manageAlerts: false
-      alertmanagerUid: ""
-      httpHeaderName1: "X-Scope-OrgID"
-    secureJsonData:
-      httpHeaderValue1: "demo"
+      exemplarTraceIdDestinations:
+        - datasourceUid: tempo
+      alertmanagerDatasource: tempo
+      customQueryParameters: 'max_source_resolution=0s'
 
-  # Loki for logs
   - name: Loki
     type: loki
     access: proxy
-    orgId: 1
     url: http://loki:3100
-    version: 1
+    uid: loki
     editable: false
     jsonData:
       derivedFields:
         - datasourceUid: tempo
-          matcherRegex: "traceId=([\\w]+)"
-          name: TraceID
-          url: "$${__value.raw}"
+          matcherRegex: "\"trace_id\":\"([a-f0-9]+)\""
+          name: Trace
+          url: "/explore?orgId=1&left={\"datasource\":\"tempo\",\"queries\":[{\"query\":\"${__value.raw}\",\"queryType\":\"traceId\"}]}"
+        - datasourceUid: pyroscope
+          matcherRegex: "\"trace_id\":\"([a-f0-9]+)\""
+          name: Profile
+          url: "/explore?orgId=1&left={\"datasource\":\"pyroscope\",\"queries\":[{\"query\":\"service_name=observability-example\",\"queryType\":\"service\"}]}"
 
-  # Tempo for traces
   - name: Tempo
     type: tempo
     access: proxy
-    orgId: 1
     url: http://tempo:3200
-    version: 1
-    editable: false
     uid: tempo
+    editable: false
     jsonData:
       httpMethod: GET
       tracesToLogs:
         datasourceUid: loki
-        tags: ['job', 'instance', 'pod', 'namespace']
+        tags: ['service', 'container']
         mappedTags: [{ key: 'service.name', value: 'service' }]
         mapTagNamesEnabled: false
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '1h'
-        filterByTraceID: false
+        spanStartTimeShift: '30m'
+        spanEndTimeShift: '30m'
+        filterByTraceID: true
         filterBySpanID: false
+        query: '{}'
       tracesToMetrics:
         datasourceUid: mimir
-        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        tags: ['service', 'container']
         queries:
-          - name: 'Sample query'
-            query: 'sum(rate(tempo_spanmetrics_latency_bucket[$__range]))'
-      serviceMap:
-        datasourceUid: mimir
-      nodeGraph:
-        enabled: true
+          - name: 'Request Rate'
+            query: 'rate(hello_requests_total{service="$service"}[5m])'
+          - name: 'Request Duration'
+            query: 'histogram_quantile(0.95, rate(hello_processing_seconds_bucket{service="$service"}[5m]))'
+      tracesToProfiles:
+        datasourceUid: pyroscope
+        tags: ['service', 'container']
+        query: 'service_name="$service"'
 
-  # Pyroscope for profiling
   - name: Pyroscope
     type: grafana-pyroscope-datasource
     access: proxy
-    orgId: 1
     url: http://pyroscope:4040
-    version: 1
+    uid: pyroscope
     editable: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: loki
+        tags: ['service', 'container']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: false
+        spanStartTimeShift: '30m'
+        spanEndTimeShift: '30m'
+        filterByTraceID: true
+        filterBySpanID: false
+        query: '{}'
+      tracesToMetrics:
+        datasourceUid: mimir
+        tags: ['service', 'container']
+        queries:
+          - name: 'Request Rate'
+            query: 'rate(hello_requests_total{service="$service"}[5m])'
+          - name: 'Request Duration'
+            query: 'histogram_quantile(0.95, rate(hello_processing_seconds_bucket{service="$service"}[5m]))'
